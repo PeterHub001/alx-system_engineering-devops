@@ -1,39 +1,72 @@
+#!/usr/bin/python3
+"""
+Function that queries the Reddit API and prints
+the top ten hot posts of a subreddit
+"""
+import re
 import requests
+import sys
 
-def count_words(subreddit, word_list, after=None, counts=None):
-    if counts is None:
-        counts = {}
 
-    if after is None:
-        # Initial API call
-        url = f"https://www.reddit.com/r/{subreddit}/hot.json"
-    else:
-        # Subsequent API calls
-        url = f"https://www.reddit.com/r/{subreddit}/hot.json?after={after}"
+def add_title(dictionary, hot_posts):
+    """ Adds item into a list """
+    if len(hot_posts) == 0:
+        return
 
+    title = hot_posts[0]['data']['title'].split()
+    for word in title:
+        for key in dictionary.keys():
+            c = re.compile("^{}$".format(key), re.I)
+            if c.findall(word):
+                dictionary[key] += 1
+    hot_posts.pop(0)
+    add_title(dictionary, hot_posts)
+
+
+def recurse(subreddit, dictionary, after=None):
+    """ Queries to Reddit API """
+    u_agent = 'Mozilla/5.0'
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        'User-Agent': u_agent
     }
 
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        articles = data["data"]["children"]
+    params = {
+        'after': after
+    }
 
-        for article in articles:
-            title = article["data"]["title"].lower()
-            for word in word_list:
-                if word.lower() in title:
-                    if word.lower() not in counts:
-                        counts[word.lower()] = 0
-                    counts[word.lower()] += title.count(word.lower())
+    url = "https://www.reddit.com/r/{}/hot.json".format(subreddit)
+    res = requests.get(url,
+                       headers=headers,
+                       params=params,
+                       allow_redirects=False)
 
-        after = data["data"]["after"]
-        if after is not None:
-            # Make recursive call for the next page
-            count_words(subreddit, word_list, after, counts)
-        else:
-            sorted_counts = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-            for word, count in sorted_counts:
-                print(f"{word}: {count}")
+    if res.status_code != 200:
+        return None
 
+    dic = res.json()
+    hot_posts = dic['data']['children']
+    add_title(dictionary, hot_posts)
+    after = dic['data']['after']
+    if not after:
+        return
+    recurse(subreddit, dictionary, after=after)
+
+
+def count_words(subreddit, word_list):
+    """ Init function """
+    dictionary = {}
+
+    for word in word_list:
+        dictionary[word] = 0
+
+    recurse(subreddit, dictionary)
+
+    l = sorted(dictionary.items(), key=lambda kv: kv[1])
+    l.reverse()
+
+    if len(l) != 0:
+        for item in l:
+            if item[1] is not 0:
+                print("{}: {}".format(item[0], item[1]))
+    else:
+        print("")
